@@ -8,7 +8,7 @@ const port = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion,ObjectId  } = require("mongodb");
 const uri = process.env.MONGODB_URI;
 
 const client = new MongoClient(uri, {
@@ -27,6 +27,7 @@ async function run() {
     const db = client.db(process.env.DB_NAME);
     const usersCollection = db.collection("users");
     const scholarshipsCollection = db.collection('scholarships');
+    const applicationsCollection = db.collection('applications');
 
 
     app.get("/api/users/:email", async (req, res) => {
@@ -65,6 +66,14 @@ async function run() {
       app.post('/api/scholarships', async (req, res) => {
         const scholarship = req.body;
         const result = await scholarshipsCollection.insertOne(scholarship);
+        res.send(result);
+      });
+
+
+
+      app.post('/api/applications', async (req, res) => {
+        const application = req.body;
+        const result = await applicationsCollection.insertOne(application);
         res.send(result);
       });
   
