@@ -56,13 +56,18 @@ async function run() {
         res.send(scholarships);
       });
 
+      app.get('/api/scholarships/:id', async (req, res) => {
+        const id = req.params.id;
+        const scholarship = await scholarshipsCollection.findOne({ _id: new ObjectId(id) });
+        res.send(scholarship);
+      });
+
       app.post('/api/scholarships', async (req, res) => {
         const scholarship = req.body;
         const result = await scholarshipsCollection.insertOne(scholarship);
         res.send(result);
       });
   
-
 
     await client.db("admin").command({ ping: 1 });
     console.log(
