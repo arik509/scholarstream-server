@@ -69,6 +69,19 @@ async function run() {
         res.send(result);
       });
 
+      app.get('/api/applications', async (req, res) => {
+        const applications = await applicationsCollection.find().toArray();
+        res.send(applications);
+      });
+
+      
+    app.get('/api/applications/user/:email', async (req, res) => {
+        const email = req.params.email;
+        const applications = await applicationsCollection.find({ userEmail: email }).toArray();
+        res.send(applications);
+      });
+  
+
 
 
       app.post('/api/applications', async (req, res) => {
