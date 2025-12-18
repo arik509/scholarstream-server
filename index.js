@@ -28,6 +28,7 @@ async function run() {
     const usersCollection = db.collection("users");
     const scholarshipsCollection = db.collection('scholarships');
     const applicationsCollection = db.collection('applications');
+    const reviewsCollection = db.collection('reviews');
 
 
     app.get("/api/users/:email", async (req, res) => {
@@ -82,11 +83,15 @@ async function run() {
       });
   
 
-
-
       app.post('/api/applications', async (req, res) => {
         const application = req.body;
         const result = await applicationsCollection.insertOne(application);
+        res.send(result);
+      });
+
+      app.post('/api/reviews', async (req, res) => {
+        const review = req.body;
+        const result = await reviewsCollection.insertOne(review);
         res.send(result);
       });
   
