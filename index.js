@@ -51,6 +51,29 @@ async function run() {
       res.send(result);
     });
 
+    app.get("/api/users", async (req, res) => {
+      const users = await usersCollection.find().toArray();
+      res.send(users);
+    });
+
+    app.patch("/api/users/:email/role", async (req, res) => {
+      const email = req.params.email;
+      const { role } = req.body;
+
+      const result = await usersCollection.updateOne(
+        { email },
+        { $set: { role } }
+      );
+
+      res.send(result);
+    });
+
+    app.delete("/api/users/:email", async (req, res) => {
+      const email = req.params.email;
+      const result = await usersCollection.deleteOne({ email });
+      res.send(result);
+    });
+
     app.get("/api/scholarships", async (req, res) => {
       const scholarships = await scholarshipsCollection.find().toArray();
       res.send(scholarships);
@@ -67,6 +90,14 @@ async function run() {
     app.post("/api/scholarships", async (req, res) => {
       const scholarship = req.body;
       const result = await scholarshipsCollection.insertOne(scholarship);
+      res.send(result);
+    });
+
+    app.delete("/api/scholarships/:id", async (req, res) => {
+      const id = req.params.id;
+      const result = await scholarshipsCollection.deleteOne({
+        _id: new ObjectId(id),
+      });
       res.send(result);
     });
 
@@ -89,9 +120,48 @@ async function run() {
       res.send(result);
     });
 
+    app.patch("/api/applications/:id/status", async (req, res) => {
+      const id = req.params.id;
+      const { applicationStatus } = req.body;
+
+      const result = await applicationsCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { applicationStatus } }
+      );
+
+      res.send(result);
+    });
+
+    app.patch("/api/applications/:id/feedback", async (req, res) => {
+      const id = req.params.id;
+      const { feedback } = req.body;
+
+      const result = await applicationsCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { feedback } }
+      );
+
+      res.send(result);
+    });
+
     app.get("/api/reviews/scholarship/:id", async (req, res) => {
       const scholarshipId = req.params.id;
-      const reviews = await reviewsCollection.find({ scholarshipId }).toArray();
+      const reviews = await reviewsCollection
+        .find({ scholarshipId })
+        .toArray();
+      res.send(reviews);
+    });
+
+    app.get("/api/reviews/user/:email", async (req, res) => {
+      const email = req.params.email;
+      const reviews = await reviewsCollection
+        .find({ userEmail: email })
+        .toArray();
+      res.send(reviews);
+    });
+
+    app.get("/api/reviews", async (req, res) => {
+      const reviews = await reviewsCollection.find().toArray();
       res.send(reviews);
     });
 
@@ -101,30 +171,13 @@ async function run() {
       res.send(result);
     });
 
-
-    app.get('/api/users', async (req, res) => {
-        const users = await usersCollection.find().toArray();
-        res.send(users);
+    app.delete("/api/reviews/:id", async (req, res) => {
+      const id = req.params.id;
+      const result = await reviewsCollection.deleteOne({
+        _id: new ObjectId(id),
       });
-      
-      app.patch('/api/users/:email/role', async (req, res) => {
-        const email = req.params.email;
-        const { role } = req.body;
-        
-        const result = await usersCollection.updateOne(
-          { email },
-          { $set: { role } }
-        );
-        
-        res.send(result);
-      });
-      
-      app.delete('/api/users/:email', async (req, res) => {
-        const email = req.params.email;
-        const result = await usersCollection.deleteOne({ email });
-        res.send(result);
-      });
-      
+      res.send(result);
+    });
 
     await client.db("admin").command({ ping: 1 });
     console.log(
