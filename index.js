@@ -1,6 +1,6 @@
 const express = require("express");
 const cors = require("cors");
-require('dotenv').config();
+require("dotenv").config();
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -22,31 +22,41 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     await client.connect();
-    console.log('✅ MongoDB Connected');
+    console.log("✅ MongoDB Connected");
 
     const db = client.db(process.env.DB_NAME);
-    const usersCollection = db.collection('users');
+    const usersCollection = db.collection("users");
 
 
-    
-    app.get('/', (req, res) => {
-        res.send('ScholarStream API is running');
-      });
-  
-      app.get('/api/users/:email', async (req, res) => {
-        const email = req.params.email;
-        const user = await usersCollection.findOne({ email });
-        res.send(user || { role: 'Student' });
-      });
-  
+    app.get("/api/users/:email", async (req, res) => {
+      const email = req.params.email;
+      const user = await usersCollection.findOne({ email });
+      res.send(user || { role: "Student" });
+    });
 
+    app.post("/api/users/register", async (req, res) => {
+      const user = req.body;
+      const existingUser = await usersCollection.findOne({ email: user.email });
+
+      if (existingUser) {
+        return res.send({
+          message: "User already exists",
+          insertedId: existingUser._id,
+        });
+      }
+
+      const result = await usersCollection.insertOne(user);
+      res.send(result);
+    });
 
 
 
     await client.db("admin").command({ ping: 1 });
-    console.log("Pinged your deployment. You successfully connected to MongoDB!");
+    console.log(
+      "Pinged your deployment. You successfully connected to MongoDB!"
+    );
   } catch (error) {
-    console.error('❌ MongoDB Connection Error:', error);
+    console.error("❌ MongoDB Connection Error:", error);
   }
 }
 
