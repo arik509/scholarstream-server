@@ -24,6 +24,25 @@ async function run() {
     await client.connect();
     console.log('✅ MongoDB Connected');
 
+    const db = client.db(process.env.DB_NAME);
+    const usersCollection = db.collection('users');
+
+
+    
+    app.get('/', (req, res) => {
+        res.send('ScholarStream API is running');
+      });
+  
+      app.get('/api/users/:email', async (req, res) => {
+        const email = req.params.email;
+        const user = await usersCollection.findOne({ email });
+        res.send(user || { role: 'Student' });
+      });
+  
+
+
+
+
     await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
   } catch (error) {
