@@ -26,6 +26,7 @@ async function run() {
 
     const db = client.db(process.env.DB_NAME);
     const usersCollection = db.collection("users");
+    const scholarshipsCollection = db.collection('scholarships');
 
 
     app.get("/api/users/:email", async (req, res) => {
@@ -49,6 +50,11 @@ async function run() {
       res.send(result);
     });
 
+
+    app.get('/api/scholarships', async (req, res) => {
+        const scholarships = await scholarshipsCollection.find().toArray();
+        res.send(scholarships);
+      });
 
 
     await client.db("admin").command({ ping: 1 });
