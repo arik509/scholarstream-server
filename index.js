@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -195,6 +196,26 @@ async function run() {
         );
         
         res.send(result);
+      });
+
+      app.post('/api/create-payment-intent', async (req, res) => {
+        const { amount } = req.body;
+      
+        try {
+          const paymentIntent = await stripe.paymentIntents.create({
+            amount: Math.round(amount * 100), // Convert to cents
+            currency: 'usd',
+            automatic_payment_methods: {
+              enabled: true,
+            },
+          });
+      
+          res.send({
+            clientSecret: paymentIntent.client_secret,
+          });
+        } catch (error) {
+          res.status(400).send({ error: error.message });
+        }
       });
 
     await client.db("admin").command({ ping: 1 });
