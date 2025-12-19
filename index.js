@@ -179,6 +179,24 @@ async function run() {
       res.send(result);
     });
 
+    app.delete('/api/applications/:id', async (req, res) => {
+        const id = req.params.id;
+        const result = await applicationsCollection.deleteOne({ _id: new ObjectId(id) });
+        res.send(result);
+      });
+
+      app.patch('/api/reviews/:id', async (req, res) => {
+        const id = req.params.id;
+        const { ratingPoint, reviewComment } = req.body;
+        
+        const result = await reviewsCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { ratingPoint, reviewComment } }
+        );
+        
+        res.send(result);
+      });
+
     await client.db("admin").command({ ping: 1 });
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!"
