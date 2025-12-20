@@ -23,7 +23,7 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     await client.connect();
-    console.log("✅ MongoDB Connected");
+    console.log("MongoDB Connected");
 
     const db = client.db(process.env.DB_NAME);
     const usersCollection = db.collection("users");
@@ -31,10 +31,20 @@ async function run() {
     const applicationsCollection = db.collection("applications");
     const reviewsCollection = db.collection("reviews");
 
+    
     app.get("/api/users/:email", async (req, res) => {
-      const email = req.params.email;
-      const user = await usersCollection.findOne({ email });
-      res.send(user || { role: "Student" });
+      try {
+        const email = req.params.email;
+        const user = await usersCollection.findOne({ email });
+        
+        if (!user) {
+          return res.status(404).send({ message: 'User not found' });
+        }
+        
+        res.send(user);
+      } catch (error) {
+        res.status(500).send({ message: 'Error fetching user', error });
+      }
     });
 
     app.post("/api/users/register", async (req, res) => {
@@ -145,6 +155,24 @@ async function run() {
       res.send(result);
     });
 
+    app.patch('/api/applications/:id/payment', async (req, res) => {
+      const id = req.params.id;
+      const { paymentStatus } = req.body;
+      
+      const result = await applicationsCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { paymentStatus } }
+      );
+      
+      res.send(result);
+    });
+
+    app.delete('/api/applications/:id', async (req, res) => {
+      const id = req.params.id;
+      const result = await applicationsCollection.deleteOne({ _id: new ObjectId(id) });
+      res.send(result);
+    });
+
     app.get("/api/reviews/scholarship/:id", async (req, res) => {
       const scholarshipId = req.params.id;
       const reviews = await reviewsCollection
@@ -172,6 +200,18 @@ async function run() {
       res.send(result);
     });
 
+    app.patch('/api/reviews/:id', async (req, res) => {
+      const id = req.params.id;
+      const { ratingPoint, reviewComment } = req.body;
+      
+      const result = await reviewsCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { ratingPoint, reviewComment } }
+      );
+      
+      res.send(result);
+    });
+
     app.delete("/api/reviews/:id", async (req, res) => {
       const id = req.params.id;
       const result = await reviewsCollection.deleteOne({
@@ -180,50 +220,32 @@ async function run() {
       res.send(result);
     });
 
-    app.delete('/api/applications/:id', async (req, res) => {
-        const id = req.params.id;
-        const result = await applicationsCollection.deleteOne({ _id: new ObjectId(id) });
-        res.send(result);
-      });
-
-      app.patch('/api/reviews/:id', async (req, res) => {
-        const id = req.params.id;
-        const { ratingPoint, reviewComment } = req.body;
-        
-        const result = await reviewsCollection.updateOne(
-          { _id: new ObjectId(id) },
-          { $set: { ratingPoint, reviewComment } }
-        );
-        
-        res.send(result);
-      });
-
-      app.post('/api/create-payment-intent', async (req, res) => {
-        const { amount } = req.body;
-      
-        try {
-          const paymentIntent = await stripe.paymentIntents.create({
-            amount: Math.round(amount * 100), // Convert to cents
-            currency: 'usd',
-            automatic_payment_methods: {
-              enabled: true,
-            },
-          });
-      
-          res.send({
-            clientSecret: paymentIntent.client_secret,
-          });
-        } catch (error) {
-          res.status(400).send({ error: error.message });
-        }
-      });
+    app.post('/api/create-payment-intent', async (req, res) => {
+      const { amount } = req.body;
+    
+      try {
+        const paymentIntent = await stripe.paymentIntents.create({
+          amount: Math.round(amount * 100), // Convert to cents
+          currency: 'usd',
+          automatic_payment_methods: {
+            enabled: true,
+          },
+        });
+    
+        res.send({
+          clientSecret: paymentIntent.client_secret,
+        });
+      } catch (error) {
+        res.status(400).send({ error: error.message });
+      }
+    });
 
     await client.db("admin").command({ ping: 1 });
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!"
     );
   } catch (error) {
-    console.error("❌ MongoDB Connection Error:", error);
+    console.error("MongoDB Connection Error:", error);
   }
 }
 
@@ -234,5 +256,5 @@ app.get("/", (req, res) => {
 });
 
 app.listen(port, () => {
-  console.log(`🚀 Server running on port ${port}`);
+  console.log(`Server running on port ${port}`);
 });
