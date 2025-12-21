@@ -4,6 +4,7 @@ const cookieParser = require("cookie-parser");
 const jwt = require("jsonwebtoken");
 require("dotenv").config();
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -23,55 +24,53 @@ app.use(cookieParser());
 
 const verifyToken = require("./middlewares/verifyToken");
 
-const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const uri = process.env.MONGODB_URI;
 
-const client = new MongoClient(uri, {
-  serverApi: {
-    version: ServerApiVersion.v1,
-    strict: true,
-    deprecationErrors: true,
-  },
-});
+let cachedClient = null;
+let cachedDb = null;
 
-// Module-level variables for collections
-let db;
-let usersCollection;
-let scholarshipsCollection;
-let applicationsCollection;
-let reviewsCollection;
-let verifyAdmin;
-let verifyModerator;
-
-// Connect to database
-async function connectDB() {
-  try {
-    await client.connect();
-    console.log("MongoDB Connected");
-
-    db = client.db(process.env.DB_NAME);
-    usersCollection = db.collection("users");
-    scholarshipsCollection = db.collection("scholarships");
-    applicationsCollection = db.collection("applications");
-    reviewsCollection = db.collection("reviews");
-
-    verifyAdmin = require("./middlewares/verifyAdmin")(usersCollection);
-    verifyModerator = require("./middlewares/verifyModerator")(usersCollection);
-  } catch (error) {
-    console.error("MongoDB Connection Error:", error);
+async function connectToDatabase() {
+  if (cachedClient && cachedDb) {
+    return {
+      client: cachedClient,
+      db: cachedDb,
+      usersCollection: cachedDb.collection("users"),
+      scholarshipsCollection: cachedDb.collection("scholarships"),
+      applicationsCollection: cachedDb.collection("applications"),
+      reviewsCollection: cachedDb.collection("reviews"),
+    };
   }
+
+  const client = new MongoClient(uri, {
+    serverApi: {
+      version: ServerApiVersion.v1,
+      strict: true,
+      deprecationErrors: true,
+    },
+  });
+
+  await client.connect();
+
+  const db = client.db(process.env.DB_NAME);
+
+  cachedClient = client;
+  cachedDb = db;
+
+  return {
+    client,
+    db,
+    usersCollection: db.collection("users"),
+    scholarshipsCollection: db.collection("scholarships"),
+    applicationsCollection: db.collection("applications"),
+    reviewsCollection: db.collection("reviews"),
+  };
 }
 
-// Initialize database connection
-connectDB();
-
-// Root route
 app.get("/", (req, res) => {
   res.send("Hello Scholars");
 });
 
-// JWT routes
-app.post("/api/jwt", (req, res) => {
+app.post("/api/jwt", async (req, res) => {
   const user = req.body;
   const token = jwt.sign(user, process.env.JWT_SECRET, { expiresIn: "7d" });
 
@@ -84,7 +83,7 @@ app.post("/api/jwt", (req, res) => {
     .send({ success: true });
 });
 
-app.post("/api/logout", (req, res) => {
+app.post("/api/logout", async (req, res) => {
   res
     .clearCookie("token", {
       httpOnly: true,
@@ -94,9 +93,9 @@ app.post("/api/logout", (req, res) => {
     .send({ success: true });
 });
 
-// User routes
-app.get("/api/users/:email", async (req, res) => {
+app.get("/api/users/:email", verifyToken, async (req, res) => {
   try {
+    const { usersCollection } = await connectToDatabase();
     const email = req.params.email;
     const user = await usersCollection.findOne({ email });
 
@@ -106,56 +105,83 @@ app.get("/api/users/:email", async (req, res) => {
 
     res.send(user);
   } catch (error) {
-    res.status(500).send({ message: "Error fetching user", error });
+    res.status(500).send({ message: "Error fetching user", error: error.message });
   }
 });
 
 app.post("/api/users/register", async (req, res) => {
-  const user = req.body;
-  const existingUser = await usersCollection.findOne({ email: user.email });
+  try {
+    const { usersCollection } = await connectToDatabase();
+    const user = req.body;
+    const existingUser = await usersCollection.findOne({ email: user.email });
 
-  if (existingUser) {
-    return res.send({
-      message: "User already exists",
-      insertedId: existingUser._id,
-    });
-  }
+    if (existingUser) {
+      return res.send({
+        message: "User already exists",
+        insertedId: existingUser._id,
+      });
+    }
 
-  const result = await usersCollection.insertOne(user);
-  res.send(result);
-});
-
-app.get("/api/users", verifyToken, verifyAdmin, async (req, res) => {
-  const users = await usersCollection.find().toArray();
-  res.send(users);
-});
-
-app.patch(
-  "/api/users/:email/role",
-  verifyToken,
-  verifyAdmin,
-  async (req, res) => {
-    const email = req.params.email;
-    const { role } = req.body;
-
-    const result = await usersCollection.updateOne(
-      { email },
-      { $set: { role } }
-    );
-
+    const result = await usersCollection.insertOne(user);
     res.send(result);
+  } catch (error) {
+    res.status(500).send({ message: "Error registering user", error: error.message });
   }
-);
-
-app.delete("/api/users/:email", verifyToken, verifyAdmin, async (req, res) => {
-  const email = req.params.email;
-  const result = await usersCollection.deleteOne({ email });
-  res.send(result);
 });
 
-// Scholarship routes
+app.get("/api/users", verifyToken, async (req, res) => {
+  try {
+    const { usersCollection } = await connectToDatabase();
+    const verifyAdmin = require("./middlewares/verifyAdmin")(usersCollection);
+
+    verifyAdmin(req, res, async () => {
+      const users = await usersCollection.find().toArray();
+      res.send(users);
+    });
+  } catch (error) {
+    res.status(500).send({ message: "Error fetching users", error: error.message });
+  }
+});
+
+app.patch("/api/users/:email/role", verifyToken, async (req, res) => {
+  try {
+    const { usersCollection } = await connectToDatabase();
+    const verifyAdmin = require("./middlewares/verifyAdmin")(usersCollection);
+
+    verifyAdmin(req, res, async () => {
+      const email = req.params.email;
+      const { role } = req.body;
+
+      const result = await usersCollection.updateOne(
+        { email },
+        { $set: { role } }
+      );
+
+      res.send(result);
+    });
+  } catch (error) {
+    res.status(500).send({ message: "Error updating user role", error: error.message });
+  }
+});
+
+app.delete("/api/users/:email", verifyToken, async (req, res) => {
+  try {
+    const { usersCollection } = await connectToDatabase();
+    const verifyAdmin = require("./middlewares/verifyAdmin")(usersCollection);
+
+    verifyAdmin(req, res, async () => {
+      const email = req.params.email;
+      const result = await usersCollection.deleteOne({ email });
+      res.send(result);
+    });
+  } catch (error) {
+    res.status(500).send({ message: "Error deleting user", error: error.message });
+  }
+});
+
 app.get("/api/scholarships", async (req, res) => {
   try {
+    const { scholarshipsCollection } = await connectToDatabase();
     const {
       search,
       country,
@@ -194,48 +220,64 @@ app.get("/api/scholarships", async (req, res) => {
       sortOptions = { scholarshipPostDate: 1 };
     }
 
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const pageNumber = parseInt(page);
+    const limitNumber = parseInt(limit);
+    const skip = (pageNumber - 1) * limitNumber;
 
     const scholarships = await scholarshipsCollection
       .find(query)
       .sort(sortOptions)
       .skip(skip)
-      .limit(parseInt(limit))
+      .limit(limitNumber)
       .toArray();
 
     const total = await scholarshipsCollection.countDocuments(query);
 
     res.send({
       scholarships,
-      totalPages: Math.ceil(total / limit),
-      currentPage: parseInt(page),
+      totalPages: Math.ceil(total / limitNumber),
+      currentPage: pageNumber,
       total,
     });
   } catch (error) {
-    res.status(500).send({ message: error.message });
+    res.status(500).send({ message: "Error fetching scholarships", error: error.message });
   }
 });
 
 app.get("/api/scholarships/:id", async (req, res) => {
-  const id = req.params.id;
-  const scholarship = await scholarshipsCollection.findOne({
-    _id: new ObjectId(id),
-  });
-  res.send(scholarship);
+  try {
+    const { scholarshipsCollection } = await connectToDatabase();
+    const id = req.params.id;
+    const scholarship = await scholarshipsCollection.findOne({
+      _id: new ObjectId(id),
+    });
+    res.send(scholarship);
+  } catch (error) {
+    res.status(500).send({ message: "Error fetching scholarship", error: error.message });
+  }
 });
 
-app.post("/api/scholarships", verifyToken, verifyAdmin, async (req, res) => {
-  const scholarship = req.body;
-  const result = await scholarshipsCollection.insertOne(scholarship);
-  res.send(result);
+app.post("/api/scholarships", verifyToken, async (req, res) => {
+  try {
+    const { scholarshipsCollection, usersCollection } = await connectToDatabase();
+    const verifyAdmin = require("./middlewares/verifyAdmin")(usersCollection);
+
+    verifyAdmin(req, res, async () => {
+      const scholarship = req.body;
+      const result = await scholarshipsCollection.insertOne(scholarship);
+      res.send(result);
+    });
+  } catch (error) {
+    res.status(500).send({ message: "Error creating scholarship", error: error.message });
+  }
 });
 
-app.put(
-  "/api/scholarships/:id",
-  verifyToken,
-  verifyAdmin,
-  async (req, res) => {
-    try {
+app.put("/api/scholarships/:id", verifyToken, async (req, res) => {
+  try {
+    const { scholarshipsCollection, usersCollection } = await connectToDatabase();
+    const verifyAdmin = require("./middlewares/verifyAdmin")(usersCollection);
+
+    verifyAdmin(req, res, async () => {
       const id = req.params.id;
       const requestData = req.body;
 
@@ -276,166 +318,243 @@ app.put(
       }
 
       res.send({ message: "Scholarship updated successfully", result });
-    } catch (error) {
-      res.status(500).send({
-        message: "Error updating scholarship",
-        error: error.message,
-      });
-    }
-  }
-);
-
-app.delete(
-  "/api/scholarships/:id",
-  verifyToken,
-  verifyAdmin,
-  async (req, res) => {
-    const id = req.params.id;
-    const result = await scholarshipsCollection.deleteOne({
-      _id: new ObjectId(id),
     });
-    res.send(result);
-  }
-);
-
-app.get("/api/admin/scholarships", verifyToken, verifyAdmin, async (req, res) => {
-  try {
-    const scholarships = await scholarshipsCollection.find().toArray();
-    res.send(scholarships);
   } catch (error) {
-    res.status(500).send({ message: error.message });
+    res.status(500).send({
+      message: "Error updating scholarship",
+      error: error.message,
+    });
   }
 });
 
-// Application routes
-app.get("/api/applications", verifyToken, verifyModerator, async (req, res) => {
-  const applications = await applicationsCollection.find().toArray();
-  res.send(applications);
+app.delete("/api/scholarships/:id", verifyToken, async (req, res) => {
+  try {
+    const { scholarshipsCollection, usersCollection } = await connectToDatabase();
+    const verifyAdmin = require("./middlewares/verifyAdmin")(usersCollection);
+
+    verifyAdmin(req, res, async () => {
+      const id = req.params.id;
+      const result = await scholarshipsCollection.deleteOne({
+        _id: new ObjectId(id),
+      });
+      res.send(result);
+    });
+  } catch (error) {
+    res.status(500).send({ message: "Error deleting scholarship", error: error.message });
+  }
+});
+
+app.get("/api/admin/scholarships", verifyToken, async (req, res) => {
+  try {
+    const { scholarshipsCollection, usersCollection } = await connectToDatabase();
+    const verifyAdmin = require("./middlewares/verifyAdmin")(usersCollection);
+
+    verifyAdmin(req, res, async () => {
+      const scholarships = await scholarshipsCollection.find().toArray();
+      res.send(scholarships);
+    });
+  } catch (error) {
+    res.status(500).send({ message: "Error fetching admin scholarships", error: error.message });
+  }
+});
+
+app.get("/api/applications", verifyToken, async (req, res) => {
+  try {
+    const { applicationsCollection, usersCollection } = await connectToDatabase();
+    const verifyModerator = require("./middlewares/verifyModerator")(usersCollection);
+
+    verifyModerator(req, res, async () => {
+      const applications = await applicationsCollection.find().toArray();
+      res.send(applications);
+    });
+  } catch (error) {
+    res.status(500).send({ message: "Error fetching applications", error: error.message });
+  }
 });
 
 app.get("/api/applications/user/:email", verifyToken, async (req, res) => {
-  const email = req.params.email;
-  const tokenEmail = req.user.email;
+  try {
+    const { applicationsCollection } = await connectToDatabase();
+    const email = req.params.email;
+    const tokenEmail = req.user.email;
 
-  if (email !== tokenEmail) {
-    return res.status(403).send({ message: "Forbidden access" });
+    if (email !== tokenEmail) {
+      return res.status(403).send({ message: "Forbidden access" });
+    }
+
+    const applications = await applicationsCollection
+      .find({ userEmail: email })
+      .toArray();
+    res.send(applications);
+  } catch (error) {
+    res.status(500).send({ message: "Error fetching user applications", error: error.message });
   }
-
-  const applications = await applicationsCollection
-    .find({ userEmail: email })
-    .toArray();
-  res.send(applications);
 });
 
 app.post("/api/applications", verifyToken, async (req, res) => {
-  const application = req.body;
-  const result = await applicationsCollection.insertOne(application);
-  res.send(result);
+  try {
+    const { applicationsCollection } = await connectToDatabase();
+    const application = req.body;
+    const result = await applicationsCollection.insertOne(application);
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({ message: "Error creating application", error: error.message });
+  }
 });
 
-app.patch(
-  "/api/applications/:id/status",
-  verifyToken,
-  verifyModerator,
-  async (req, res) => {
-    const id = req.params.id;
-    const { applicationStatus } = req.body;
+app.patch("/api/applications/:id/status", verifyToken, async (req, res) => {
+  try {
+    const { applicationsCollection, usersCollection } = await connectToDatabase();
+    const verifyModerator = require("./middlewares/verifyModerator")(usersCollection);
 
-    const result = await applicationsCollection.updateOne(
-      { _id: new ObjectId(id) },
-      { $set: { applicationStatus } }
-    );
+    verifyModerator(req, res, async () => {
+      const id = req.params.id;
+      const { applicationStatus } = req.body;
 
-    res.send(result);
+      const result = await applicationsCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { applicationStatus } }
+      );
+
+      res.send(result);
+    });
+  } catch (error) {
+    res.status(500).send({ message: "Error updating application status", error: error.message });
   }
-);
+});
 
-app.patch(
-  "/api/applications/:id/feedback",
-  verifyToken,
-  verifyModerator,
-  async (req, res) => {
-    const id = req.params.id;
-    const { feedback } = req.body;
+app.patch("/api/applications/:id/feedback", verifyToken, async (req, res) => {
+  try {
+    const { applicationsCollection, usersCollection } = await connectToDatabase();
+    const verifyModerator = require("./middlewares/verifyModerator")(usersCollection);
 
-    const result = await applicationsCollection.updateOne(
-      { _id: new ObjectId(id) },
-      { $set: { feedback } }
-    );
+    verifyModerator(req, res, async () => {
+      const id = req.params.id;
+      const { feedback } = req.body;
 
-    res.send(result);
+      const result = await applicationsCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { feedback } }
+      );
+
+      res.send(result);
+    });
+  } catch (error) {
+    res.status(500).send({ message: "Error updating application feedback", error: error.message });
   }
-);
+});
 
 app.patch("/api/applications/:id/payment", verifyToken, async (req, res) => {
-  const id = req.params.id;
-  const { paymentStatus } = req.body;
+  try {
+    const { applicationsCollection } = await connectToDatabase();
+    const id = req.params.id;
+    const { paymentStatus } = req.body;
 
-  const result = await applicationsCollection.updateOne(
-    { _id: new ObjectId(id) },
-    { $set: { paymentStatus } }
-  );
+    const result = await applicationsCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { paymentStatus } }
+    );
 
-  res.send(result);
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({ message: "Error updating payment status", error: error.message });
+  }
 });
 
 app.delete("/api/applications/:id", verifyToken, async (req, res) => {
-  const id = req.params.id;
-  const result = await applicationsCollection.deleteOne({
-    _id: new ObjectId(id),
-  });
-  res.send(result);
+  try {
+    const { applicationsCollection } = await connectToDatabase();
+    const id = req.params.id;
+    const result = await applicationsCollection.deleteOne({
+      _id: new ObjectId(id),
+    });
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({ message: "Error deleting application", error: error.message });
+  }
 });
 
-// Review routes
 app.get("/api/reviews/scholarship/:id", async (req, res) => {
-  const scholarshipId = req.params.id;
-  const reviews = await reviewsCollection.find({ scholarshipId }).toArray();
-  res.send(reviews);
+  try {
+    const { reviewsCollection } = await connectToDatabase();
+    const scholarshipId = req.params.id;
+    const reviews = await reviewsCollection.find({ scholarshipId }).toArray();
+    res.send(reviews);
+  } catch (error) {
+    res.status(500).send({ message: "Error fetching reviews", error: error.message });
+  }
 });
 
 app.get("/api/reviews/user/:email", verifyToken, async (req, res) => {
-  const email = req.params.email;
-  const reviews = await reviewsCollection.find({ userEmail: email }).toArray();
-  res.send(reviews);
+  try {
+    const { reviewsCollection } = await connectToDatabase();
+    const email = req.params.email;
+    const reviews = await reviewsCollection.find({ userEmail: email }).toArray();
+    res.send(reviews);
+  } catch (error) {
+    res.status(500).send({ message: "Error fetching user reviews", error: error.message });
+  }
 });
 
-app.get("/api/reviews", verifyToken, verifyModerator, async (req, res) => {
-  const reviews = await reviewsCollection.find().toArray();
-  res.send(reviews);
+app.get("/api/reviews", verifyToken, async (req, res) => {
+  try {
+    const { reviewsCollection, usersCollection } = await connectToDatabase();
+    const verifyModerator = require("./middlewares/verifyModerator")(usersCollection);
+
+    verifyModerator(req, res, async () => {
+      const reviews = await reviewsCollection.find().toArray();
+      res.send(reviews);
+    });
+  } catch (error) {
+    res.status(500).send({ message: "Error fetching reviews", error: error.message });
+  }
 });
 
 app.post("/api/reviews", verifyToken, async (req, res) => {
-  const review = req.body;
-  const result = await reviewsCollection.insertOne(review);
-  res.send(result);
+  try {
+    const { reviewsCollection } = await connectToDatabase();
+    const review = req.body;
+    const result = await reviewsCollection.insertOne(review);
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({ message: "Error creating review", error: error.message });
+  }
 });
 
 app.patch("/api/reviews/:id", verifyToken, async (req, res) => {
-  const id = req.params.id;
-  const { ratingPoint, reviewComment } = req.body;
+  try {
+    const { reviewsCollection } = await connectToDatabase();
+    const id = req.params.id;
+    const { ratingPoint, reviewComment } = req.body;
 
-  const result = await reviewsCollection.updateOne(
-    { _id: new ObjectId(id) },
-    { $set: { ratingPoint, reviewComment } }
-  );
+    const result = await reviewsCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { ratingPoint, reviewComment } }
+    );
 
-  res.send(result);
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({ message: "Error updating review", error: error.message });
+  }
 });
 
 app.delete("/api/reviews/:id", verifyToken, async (req, res) => {
-  const id = req.params.id;
-  const result = await reviewsCollection.deleteOne({
-    _id: new ObjectId(id),
-  });
-  res.send(result);
+  try {
+    const { reviewsCollection } = await connectToDatabase();
+    const id = req.params.id;
+    const result = await reviewsCollection.deleteOne({
+      _id: new ObjectId(id),
+    });
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({ message: "Error deleting review", error: error.message });
+  }
 });
 
-// Payment route
 app.post("/api/create-payment-intent", verifyToken, async (req, res) => {
-  const { amount } = req.body;
-
   try {
+    const { amount } = req.body;
+
     const paymentIntent = await stripe.paymentIntents.create({
       amount: Math.round(amount * 100),
       currency: "usd",
@@ -452,12 +571,10 @@ app.post("/api/create-payment-intent", verifyToken, async (req, res) => {
   }
 });
 
-// Local development server
 if (process.env.NODE_ENV !== "production") {
   app.listen(port, () => {
     console.log(`Server is running on port ${port}`);
   });
 }
 
-// Export for Vercel
 module.exports = app;
