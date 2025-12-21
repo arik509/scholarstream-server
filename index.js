@@ -184,6 +184,23 @@ async function run() {
       res.send(result);
     });
 
+    app.put("/api/scholarships/:id", verifyToken, verifyAdmin, async (req, res) => {
+      try {
+        const id = req.params.id;
+        const updateData = req.body;
+        
+        const result = await scholarshipsCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: updateData }
+        );
+        
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ message: 'Error updating scholarship', error: error.message });
+      }
+    });
+    
+
     app.delete("/api/scholarships/:id", verifyToken, verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const result = await scholarshipsCollection.deleteOne({
