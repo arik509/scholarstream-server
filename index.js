@@ -115,9 +115,60 @@ async function run() {
     });
 
     app.get("/api/scholarships", async (req, res) => {
-      const scholarships = await scholarshipsCollection.find().toArray();
-      res.send(scholarships);
-    });
+        try {
+          const { search, country, category, sort, page = 1, limit = 9 } = req.query;
+          
+          const query = {};
+          
+          if (search) {
+            query.$or = [
+              { scholarshipName: { $regex: search, $options: 'i' } },
+              { universityName: { $regex: search, $options: 'i' } },
+              { degree: { $regex: search, $options: 'i' } }
+            ];
+          }
+          
+          if (country) {
+            query.universityCountry = country;
+          }
+          
+          if (category) {
+            query.scholarshipCategory = category;
+          }
+          
+          let sortOptions = {};
+          if (sort === 'fees-asc') {
+            sortOptions = { applicationFees: 1 };
+          } else if (sort === 'fees-desc') {
+            sortOptions = { applicationFees: -1 };
+          } else if (sort === 'date-desc') {
+            sortOptions = { scholarshipPostDate: -1 };
+          } else if (sort === 'date-asc') {
+            sortOptions = { scholarshipPostDate: 1 };
+          }
+          
+          const skip = (parseInt(page) - 1) * parseInt(limit);
+          
+          const scholarships = await scholarshipsCollection
+            .find(query)
+            .sort(sortOptions)
+            .skip(skip)
+            .limit(parseInt(limit))
+            .toArray();
+          
+          const total = await scholarshipsCollection.countDocuments(query);
+          
+          res.send({
+            scholarships,
+            totalPages: Math.ceil(total / limit),
+            currentPage: parseInt(page),
+            total
+          });
+        } catch (error) {
+          res.status(500).send({ message: error.message });
+        }
+      });
+      
 
     app.get("/api/scholarships/:id", async (req, res) => {
       const id = req.params.id;
