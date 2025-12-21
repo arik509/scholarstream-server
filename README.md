@@ -4,7 +4,7 @@
 RESTful API backend for ScholarStream scholarship management platform with JWT authentication, role-based access control, and Stripe payment integration.
 
 ## Live API URL
-🔗 [API Base URL](https://your-api-name.vercel.app)
+🔗 [API Base URL](https://scholarstream-server-one.vercel.app/)
 
 ## Key Features
 - 🔐 JWT-based authentication with httpOnly cookies
