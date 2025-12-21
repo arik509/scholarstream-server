@@ -114,3 +114,5 @@ npm start
 
 ## Author
 Developed by Sabir Hossain Arik
+
+echo "# Force redeploy"
