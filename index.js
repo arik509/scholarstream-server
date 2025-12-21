@@ -9,7 +9,7 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:5174'],
+  origin: ['http://localhost:5173', 'http://localhost:5174',],
   credentials: true
 }));
 app.use(express.json());
@@ -192,6 +192,15 @@ async function run() {
       res.send(result);
     });
 
+    app.get("/api/admin/scholarships", verifyToken, verifyAdmin, async (req, res) => {
+      try {
+        const scholarships = await scholarshipsCollection.find().toArray();
+        res.send(scholarships);
+      } catch (error) {
+        res.status(500).send({ message: error.message });
+      }
+    });
+
     app.get("/api/applications", verifyToken, verifyModerator, async (req, res) => {
       const applications = await applicationsCollection.find().toArray();
       res.send(applications);
@@ -326,10 +335,10 @@ async function run() {
       }
     });
 
-    await client.db("admin").command({ ping: 1 });
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!"
-    );
+    // await client.db("admin").command({ ping: 1 });
+    // console.log(
+    //   "Pinged your deployment. You successfully connected to MongoDB!"
+    // );
   } catch (error) {
     console.error("MongoDB Connection Error:", error);
   }
