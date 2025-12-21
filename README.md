@@ -116,3 +116,5 @@ npm start
 Developed by Sabir Hossain Arik
 
 echo "# Force redeploy"
+
+echo "# Trigger webhook $(date +%s)" 
