@@ -9,7 +9,7 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:5174',],
+  origin: ['http://localhost:5173', 'http://localhost:5174'],
   credentials: true
 }));
 app.use(express.json());
@@ -115,60 +115,59 @@ async function run() {
     });
 
     app.get("/api/scholarships", async (req, res) => {
-        try {
-          const { search, country, category, sort, page = 1, limit = 9 } = req.query;
-          
-          const query = {};
-          
-          if (search) {
-            query.$or = [
-              { scholarshipName: { $regex: search, $options: 'i' } },
-              { universityName: { $regex: search, $options: 'i' } },
-              { degree: { $regex: search, $options: 'i' } }
-            ];
-          }
-          
-          if (country) {
-            query.universityCountry = country;
-          }
-          
-          if (category) {
-            query.scholarshipCategory = category;
-          }
-          
-          let sortOptions = {};
-          if (sort === 'fees-asc') {
-            sortOptions = { applicationFees: 1 };
-          } else if (sort === 'fees-desc') {
-            sortOptions = { applicationFees: -1 };
-          } else if (sort === 'date-desc') {
-            sortOptions = { scholarshipPostDate: -1 };
-          } else if (sort === 'date-asc') {
-            sortOptions = { scholarshipPostDate: 1 };
-          }
-          
-          const skip = (parseInt(page) - 1) * parseInt(limit);
-          
-          const scholarships = await scholarshipsCollection
-            .find(query)
-            .sort(sortOptions)
-            .skip(skip)
-            .limit(parseInt(limit))
-            .toArray();
-          
-          const total = await scholarshipsCollection.countDocuments(query);
-          
-          res.send({
-            scholarships,
-            totalPages: Math.ceil(total / limit),
-            currentPage: parseInt(page),
-            total
-          });
-        } catch (error) {
-          res.status(500).send({ message: error.message });
+      try {
+        const { search, country, category, sort, page = 1, limit = 9 } = req.query;
+        
+        const query = {};
+        
+        if (search) {
+          query.$or = [
+            { scholarshipName: { $regex: search, $options: 'i' } },
+            { universityName: { $regex: search, $options: 'i' } },
+            { degree: { $regex: search, $options: 'i' } }
+          ];
         }
-      });
-      
+        
+        if (country) {
+          query.universityCountry = country;
+        }
+        
+        if (category) {
+          query.scholarshipCategory = category;
+        }
+        
+        let sortOptions = {};
+        if (sort === 'fees-asc') {
+          sortOptions = { applicationFees: 1 };
+        } else if (sort === 'fees-desc') {
+          sortOptions = { applicationFees: -1 };
+        } else if (sort === 'date-desc') {
+          sortOptions = { scholarshipPostDate: -1 };
+        } else if (sort === 'date-asc') {
+          sortOptions = { scholarshipPostDate: 1 };
+        }
+        
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+        
+        const scholarships = await scholarshipsCollection
+          .find(query)
+          .sort(sortOptions)
+          .skip(skip)
+          .limit(parseInt(limit))
+          .toArray();
+        
+        const total = await scholarshipsCollection.countDocuments(query);
+        
+        res.send({
+          scholarships,
+          totalPages: Math.ceil(total / limit),
+          currentPage: parseInt(page),
+          total
+        });
+      } catch (error) {
+        res.status(500).send({ message: error.message });
+      }
+    });
 
     app.get("/api/scholarships/:id", async (req, res) => {
       const id = req.params.id;
@@ -187,19 +186,49 @@ async function run() {
     app.put("/api/scholarships/:id", verifyToken, verifyAdmin, async (req, res) => {
       try {
         const id = req.params.id;
-        const updateData = req.body;
+        const requestData = req.body;
+        
+        const allowedFields = [
+          'scholarshipName',
+          'universityName',
+          'universityCountry',
+          'universityCity',
+          'universityImage',
+          'subjectCategory',
+          'scholarshipCategory',
+          'degree',
+          'applicationFees',
+          'serviceCharge',
+          'applicationDeadline',
+          'scholarshipDescription',
+          'scholarshipPostDate'
+        ];
+        
+        const updateData = {};
+        allowedFields.forEach(field => {
+          if (requestData[field] !== undefined) {
+            updateData[field] = requestData[field];
+          }
+        });
+        
+        if (Object.keys(updateData).length === 0) {
+          return res.status(400).send({ message: 'No valid fields to update' });
+        }
         
         const result = await scholarshipsCollection.updateOne(
           { _id: new ObjectId(id) },
           { $set: updateData }
         );
         
-        res.send(result);
+        if (result.matchedCount === 0) {
+          return res.status(404).send({ message: 'Scholarship not found' });
+        }
+        
+        res.send({ message: 'Scholarship updated successfully', result });
       } catch (error) {
         res.status(500).send({ message: 'Error updating scholarship', error: error.message });
       }
     });
-    
 
     app.delete("/api/scholarships/:id", verifyToken, verifyAdmin, async (req, res) => {
       const id = req.params.id;
@@ -356,6 +385,7 @@ async function run() {
     // console.log(
     //   "Pinged your deployment. You successfully connected to MongoDB!"
     // );
+
   } catch (error) {
     console.error("MongoDB Connection Error:", error);
   }
